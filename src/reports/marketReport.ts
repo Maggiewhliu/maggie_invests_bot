@@ -15,11 +15,20 @@ export interface MarketReport {
   dataQuality: "real" | "incomplete" | "stale" | "invalid"; asOf: string;
 }
 
+const BENCHMARK_LABEL: Record<string, { "zh-TW": string; en: string }> = {
+  SPY: { "zh-TW": "S&P 500 ETF", en: "S&P 500 ETF" },
+  QQQ: { "zh-TW": "Nasdaq-100 ETF", en: "Nasdaq-100 ETF" },
+  DIA: { "zh-TW": "道瓊工業 ETF", en: "Dow Industrials ETF" },
+  IWM: { "zh-TW": "美國小型股 ETF", en: "US Small Caps ETF" },
+};
+const BENCHMARKS = new Set(Object.keys(BENCHMARK_LABEL));
+
 const T = {
   "zh-TW": {
     title: "美股市場狀態", session: { premarket:"延長時段(盤前)", regular:"盤中",
       afterhours:"延長時段(盤後)", closed:"休市", unknown:"日曆未涵蓋" },
-    holiday:"休市", halfDay:"(半日)", ranking:"七巨頭表現", weak:"相對弱勢",
+    holiday:"休市", halfDay:"(半日)", marketGauge:"美股大盤溫度計",
+    proxyNote:"以下以 ETF 作為市場代理", ranking:"七巨頭表現", weak:"相對弱勢",
     tech:"技術面觀察", rsiHigh:"RSI 偏高", rsiLow:"RSI 偏低", volSpike:"成交量放大",
     watch:"接下來觀察什麼", invalid:"什麼情況代表判讀失效",
     w1:"量能是否連續,而非單日異常。", w2:"是否有事件改變原有觀察前提。",
@@ -32,7 +41,8 @@ const T = {
   en: {
     title: "US Market State", session: { premarket:"Extended hours (pre-market)", regular:"Regular session",
       afterhours:"Extended hours (post-market)", closed:"Closed", unknown:"Calendar not covered" },
-    holiday:"Market holiday", halfDay:"(half day)", ranking:"Magnificent 7", weak:"Relative laggards",
+    holiday:"Market holiday", halfDay:"(half day)", marketGauge:"US Market Gauge",
+    proxyNote:"Market proxies shown via ETFs", ranking:"Magnificent 7", weak:"Relative laggards",
     tech:"Technical observations", rsiHigh:"RSI elevated", rsiLow:"RSI depressed", volSpike:"Volume expansion",
     watch:"What to watch next", invalid:"What would invalidate this",
     w1:"Whether volume holds across sessions rather than spiking once.",
@@ -59,7 +69,25 @@ export function buildMarketReport(snap: ProviderSnapshot<Quote[]>, lang: Lang,
   if (!snap.data || snap.quality === "invalid") {
     lines.push(t.unavailable);
   } else {
-    const rows = [...snap.data].sort((a,b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity));
+    const allRows = [...snap.data];
+    const benchmarkRows = allRows.filter(q => BENCHMARKS.has(q.symbol));
+    const rows = allRows.filter(q => !BENCHMARKS.has(q.symbol))
+      .sort((a,b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity));
+
+    lines.push(`${t.marketGauge}`);
+    for (const symbol of ["SPY", "QQQ", "DIA", "IWM"]) {
+      const q = benchmarkRows.find(row => row.symbol === symbol);
+      if (!q) {
+        lines.push(`  · ${symbol.padEnd(4)} ${t.nochange}`);
+        continue;
+      }
+      const pct = q.changePct;
+      const arrow = pct == null ? "·" : pct >= 0 ? "▲" : "▼";
+      const pctStr = pct == null ? t.nochange : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+      lines.push(`  ${arrow} ${symbol.padEnd(4)} ${q.last.toFixed(2).padStart(8)}  ${pctStr}  ${BENCHMARK_LABEL[symbol][lang]}`);
+    }
+    lines.push(`  ${t.proxyNote}`, "");
+
     lines.push(`${t.ranking}`);
     for (const q of rows) {
       const pct = q.changePct;
@@ -68,15 +96,15 @@ export function buildMarketReport(snap: ProviderSnapshot<Quote[]>, lang: Lang,
       lines.push(`  ${arrow} ${q.symbol.padEnd(6)} ${q.last.toFixed(2).padStart(8)}  ${pctStr}`);
     }
     // Fix2:資料時間範圍與過期 symbols
-    const dates = [...new Set(rows.map(q => q.asOf.slice(0, 10)))].sort();
+    const dates = [...new Set(allRows.map(q => q.asOf.slice(0, 10)))].sort();
     if (dates.length > 1) lines.push("", `${t.dataRange}: ${dates[0]} ~ ${dates[dates.length - 1]}`);
     if (snap.expectedSessionDate) {
-      const stale = rows.filter(q => q.asOf.slice(0, 10) < snap.expectedSessionDate!).map(q => q.symbol);
+      const stale = allRows.filter(q => q.asOf.slice(0, 10) < snap.expectedSessionDate!).map(q => q.symbol);
       if (stale.length) lines.push("", `${t.staleLabel}: ${stale.join(", ")} (< ${snap.expectedSessionDate})`);
     }
     // P1:incomplete 時明列缺少的 symbols
     if (snap.symbolsRequested) {
-      const got = new Set(rows.map(r => r.symbol));
+      const got = new Set(allRows.map(r => r.symbol));
       const miss = snap.symbolsRequested.filter(s => !got.has(s));
       if (miss.length) { lines.push(""); lines.push(`${t.missing}: ${miss.join(", ")}`); }
     }
