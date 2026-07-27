@@ -7,6 +7,8 @@
     "node": ">=22.6.0"
   },
   "scripts": {
+    "start": "node --experimental-strip-types src/runtime/server.ts",
+    "telegram:set-webhook": "node --experimental-strip-types scripts/setTelegramWebhook.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "test:tsx": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
