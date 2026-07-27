@@ -16,6 +16,9 @@ import { assertPublishable } from "../contentRiskGuard.ts";
 import { sealDecisionArtifact, type ProvenanceReader } from "../pipeline/artifactSeal.ts";
 
 export const MAG7 = ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA"];
+/** 大盤以流動性高的 ETF 作為市場代理，避免把指數授權與 ETF 報價混為一談。 */
+export const MARKET_BENCHMARKS = ["SPY","QQQ","DIA","IWM"];
+export const MARKET_SYMBOLS = [...MARKET_BENCHMARKS, ...MAG7];
 
 const UI = {
   "zh-TW": {
@@ -86,7 +89,7 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
       const acc = canAccess({ tier: user.tier, jurisdictionPaidAllowed: user.jurisdictionPaidAllowed },
         "basic_indicators", env);
       if (!acc.allowed) return { reply: t.denied(acc.reason) };
-      const snap = await deps.quotes.getQuotes(MAG7);
+      const snap = await deps.quotes.getQuotes(MARKET_SYMBOLS);
       if (!snap.data || snap.quality === "invalid") return { reply: t.noData };
       const repZh = buildMarketReport(snap, "zh-TW", now);
       const repEn = buildMarketReport(snap, "en", now);
