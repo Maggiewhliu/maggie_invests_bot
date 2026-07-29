@@ -60,6 +60,9 @@ test("/start → Lobby 使用者,不索取持倉", async () => {
   const d = deps();
   const r = await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
   assert.match(r.reply!, /不提供投資建議/);
+  assert.match(r.reply!, /Welcome to Maggie Stock AI/);
+  assert.match(r.reply!, /\/language zh（繁體中文）/);
+  assert.match(r.reply!, /\/language en \(English\)/);
   assert.equal((await d.recipients.get("u1"))!.tier, 1);
 });
 test("/language en → 英文輸出", async () => {
