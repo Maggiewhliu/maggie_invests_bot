@@ -26,6 +26,20 @@ const transport = new LiveTelegramTransport(token);
 const quotes = new MassiveQuoteProvider(massiveKey, undefined, undefined, undefined, ledger);
 const store = new MemoryPushStore();
 const grants: LicenseGrant[] = [];
+const personalPreviewEnabled = process.env.PERSONAL_PREVIEW_ENABLED === "true";
+if (personalPreviewEnabled) {
+  const ownerId = required("PERSONAL_PREVIEW_USER_ID", 1);
+  if (!/^\d+$/.test(ownerId)) throw new Error("PERSONAL_PREVIEW_USER_ID must be numeric");
+  grants.push({
+    supplier: "massive",
+    dataset: "equity_daily_close",
+    channels: ["telegram"],
+    jurisdictions: ["TW"],
+    uses: ["internal_research"],
+    validUntilIso: null,
+    docRef: "PERSONAL-PREVIEW-OWNER-ONLY",
+  });
+}
 if (process.env.MASSIVE_TELEGRAM_DERIVED_DISPLAY_GRANTED === "true") {
   grants.push({
     supplier: "massive",
