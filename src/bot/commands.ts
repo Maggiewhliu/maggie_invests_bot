@@ -47,6 +47,17 @@ const UI = {
   },
 } as const;
 
+/** /start 固定提供繁中＋英文，讓新使用者不必先猜語言指令。 */
+export const BILINGUAL_WELCOME = [
+  "歡迎使用 Maggie Stock AI。",
+  "這裡提供美股市場資訊與投資教育，不提供投資建議、不代操、不報明牌。",
+  "請選擇語言：/language zh（繁體中文）或 /language en（English）",
+  "",
+  "Welcome to Maggie Stock AI.",
+  "US market information and investor education only — no investment advice, managed accounts, or stock tips.",
+  "Choose your language: /language zh (Traditional Chinese) or /language en (English)",
+].join("\\n");
+
 export interface BotDeps {
   recipients: RecipientProvider; quotes: QuoteProvider; transport: TelegramTransport;
   store: PushStore; license: LicenseRegistry;
@@ -76,9 +87,9 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         jurisdiction: "TW", jurisdictionPaidAllowed: false };
       await deps.recipients.upsert(user);
     }
-    return { reply: UI[user.lang].welcome };
+    return { reply: BILINGUAL_WELCOME };
   }
-  if (!user) return { reply: UI["zh-TW"].welcome };
+  if (!user) return { reply: BILINGUAL_WELCOME };
   const t = UI[user.lang];
 
   switch (cmd) {
