@@ -63,6 +63,8 @@ test("/start → Lobby 使用者,不索取持倉", async () => {
   assert.match(r.reply!, /Welcome to Maggie Stock AI/);
   assert.match(r.reply!, /\/language zh（繁體中文）/);
   assert.match(r.reply!, /\/language en \(English\)/);
+  assert.equal(r.reply!.includes("\\\\n"), false);
+  assert.match(r.reply!, /AI。\n這裡/);
   assert.equal((await d.recipients.get("u1"))!.tier, 1);
 });
 test("/language en → 英文輸出", async () => {
