@@ -11,7 +11,9 @@ import type { Quote, QuoteProvider, ProviderSnapshot } from "./types.ts";
 import { lastCompletedSessionDate } from "../marketClock.ts";
 import type { ProvenanceWriter } from "../pipeline/artifactSeal.ts";
 
-export const MASSIVE_API_BASE = "https://api.massive.com";\n\nexport type HttpGet = (url: string, headers?: Record<string, string>)
+export const MASSIVE_API_BASE = "https://api.massive.com";
+
+export type HttpGet = (url: string, headers?: Record<string, string>)
   => Promise<{ status: number; text: () => Promise<string> }>;
 
 const dstr = (d: Date) => d.toISOString().slice(0, 10);
