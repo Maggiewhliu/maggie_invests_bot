@@ -109,7 +109,14 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         "basic_indicators", env);
       if (!acc.allowed) return { reply: t.denied(acc.reason) };
       const snap = await deps.quotes.getQuotes(MARKET_SYMBOLS);
-      if (!snap.data || snap.quality === "invalid") return { reply: t.noData };
+      if (!snap.data || snap.quality === "invalid") {
+        console.warn("[market-data] unavailable", {
+          provider: snap.provider,
+          quality: snap.quality,
+          notes: snap.notes ?? [],
+        });
+        return { reply: t.noData };
+      }
       const repZh = buildMarketReport(snap, "zh-TW", now);
       const repEn = buildMarketReport(snap, "en", now);
       const rep = user.lang === "en" ? repEn : repZh;
