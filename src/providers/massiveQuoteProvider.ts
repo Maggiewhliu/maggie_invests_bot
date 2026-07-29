@@ -11,7 +11,7 @@ import type { Quote, QuoteProvider, ProviderSnapshot } from "./types.ts";
 import { lastCompletedSessionDate } from "../marketClock.ts";
 import type { ProvenanceWriter } from "../pipeline/artifactSeal.ts";
 
-export type HttpGet = (url: string, headers?: Record<string, string>)
+export const MASSIVE_API_BASE = "https://api.massive.com";\n\nexport type HttpGet = (url: string, headers?: Record<string, string>)
   => Promise<{ status: number; text: () => Promise<string> }>;
 
 const dstr = (d: Date) => d.toISOString().slice(0, 10);
@@ -20,7 +20,7 @@ export class MassiveQuoteProvider implements QuoteProvider {
   id = "massive";
   private key: string; private http: HttpGet; private base: string; private clock: () => Date;
   private writer: ProvenanceWriter | null;
-  constructor(apiKey: string, http?: HttpGet, base = "https://api.polygon.io",
+  constructor(apiKey: string, http?: HttpGet, base = MASSIVE_API_BASE,
     clock: () => Date = () => new Date(), writer: ProvenanceWriter | null = null) {
     this.writer = writer;
     if (!apiKey) throw new Error("MASSIVE_API_KEY missing");
