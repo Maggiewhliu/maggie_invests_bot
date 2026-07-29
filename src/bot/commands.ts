@@ -54,6 +54,14 @@ export interface BotDeps {
   env?: Record<string, string | undefined>; now?: () => Date;
 }
 
+/** 個人預覽只對明確指定的 owner 生效；其他使用者仍走 derived-display 授權。 */
+export function marketLicenseUse(userId: string, env: Record<string, string | undefined>):
+  "internal_research" | "derived_display" {
+  return env["PERSONAL_PREVIEW_ENABLED"] === "true"
+    && env["PERSONAL_PREVIEW_USER_ID"] === userId
+    ? "internal_research" : "derived_display";
+}
+
 export async function handleCommand(raw: string, from: { userId: string; chatId: string },
   deps: BotDeps): Promise<{ reply?: string; published?: unknown }> {
   const env = deps.env ?? process.env;
@@ -106,7 +114,7 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         primaryLang: user.lang,
         policy: { channel: "telegram", node: "on_demand_markets", etDate: st.etDate,
           candidateMode: "fixed", feature: "basic_indicators", minTier: 1,
-          licenseUse: "derived_display" },
+          licenseUse: marketLicenseUse(user.userId, env) },
       }, deps.provenanceReader, secret);
       // 單人查詢也走完整管線(去重鍵含 recipient,不會與群發衝突)
       const res = await publish({
