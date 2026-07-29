@@ -56,7 +56,7 @@ export const BILINGUAL_WELCOME = [
   "Welcome to Maggie Stock AI.",
   "US market information and investor education only — no investment advice, managed accounts, or stock tips.",
   "Choose your language: /language zh (Traditional Chinese) or /language en (English)",
-].join("\\n");
+].join("\n");
 
 export interface BotDeps {
   recipients: RecipientProvider; quotes: QuoteProvider; transport: TelegramTransport;
