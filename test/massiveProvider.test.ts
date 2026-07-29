@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MassiveQuoteProvider, type HttpGet } from "../src/providers/massiveQuoteProvider.ts";
+import { MASSIVE_API_BASE, MassiveQuoteProvider, type HttpGet } from "../src/providers/massiveQuoteProvider.ts";
 
 const CLOCK = () => new Date("2026-07-24T21:00:00Z");
 const twoBars = (c0: number, c1: number, v0: number | null = 1_000_000) => ({
@@ -37,6 +37,12 @@ test("P0-4 raw 與 normalized 存證分離且皆存在", async () => {
   assert.equal(s.rawProvenanceHash.length, 64);
   assert.equal(s.normalizedHash.length, 64);
   assert.notEqual(s.rawProvenanceHash, s.normalizedHash);
+});
+test("預設使用目前 Massive REST 主機", async () => {
+  let seenUrl = "";
+  const http: HttpGet = async (u) => { seenUrl = u; return twoBars(100, 99); };
+  await new MassiveQuoteProvider("secret-key", http, undefined, CLOCK).getQuotes(["AAPL"]);
+  assert.equal(seenUrl.startsWith(MASSIVE_API_BASE + "/v2/aggs/"), true);
 });
 test("P1 key 走 Authorization header,不出現在 URL", async () => {
   let seenUrl = ""; let seenAuth = "";
