@@ -92,7 +92,13 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
     }
     return { reply: BILINGUAL_WELCOME };
   }
-  if (!user) return { reply: BILINGUAL_WELCOME };
+  // Preview 使用 MemoryRecipientProvider，容器重啟會清空；任何有效指令都可
+  // 自動重建 Lobby 使用者，避免 /language、/markets 被困在歡迎頁。
+  if (!user) {
+    user = { userId: from.userId, chatId: from.chatId, tier: 1, lang: "zh-TW",
+      jurisdiction: "TW", jurisdictionPaidAllowed: false };
+    await deps.recipients.upsert(user);
+  }
   const t = UI[user.lang];
 
   switch (cmd) {
