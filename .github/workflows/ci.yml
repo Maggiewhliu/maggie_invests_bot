@@ -12,6 +12,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Forbid TS parameter properties (Node strip-only incompatible)
+        run: |
+          ! grep -rn "constructor(\(private\|public\|protected\|readonly\) " src/ test/ scripts/
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

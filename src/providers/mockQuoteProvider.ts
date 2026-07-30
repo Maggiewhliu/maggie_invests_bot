@@ -11,6 +11,10 @@ const F = (symbol: string, last: number, prevClose: number, volume: number,
   changePct: Math.round(((last - prevClose) / prevClose) * 10_000) / 100,
 });
 const FIXTURE: Record<string, Quote> = {
+  SPY:   F("SPY",  740.86, 739.09, 68_000_000, 55.1, 0.22),
+  QQQ:   F("QQQ",  675.49, 682.10, 51_000_000, 49.3, -0.35),
+  DIA:   F("DIA",  526.89, 521.26, 3_400_000, 57.8, 0.41),
+  IWM:   F("IWM",  293.37, 292.90, 28_000_000, 51.2, 0.08),
   AAPL:  F("AAPL", 231.40, 229.97, 41_200_000, 54.2, 0.31),
   MSFT:  F("MSFT", 512.80, 514.91, 18_900_000, 48.7, -0.12),
   NVDA:  F("NVDA", 184.20, 181.94, 212_000_000, 61.3, 0.88),

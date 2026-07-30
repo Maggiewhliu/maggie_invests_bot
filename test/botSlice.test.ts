@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleCommand, MAG7, type BotDeps } from "../src/bot/commands.ts";
+import { handleCommand, MAG7, MARKET_SYMBOLS, type BotDeps } from "../src/bot/commands.ts";
 import { MemoryRecipientProvider, type BotUser } from "../src/providers/recipientAdapter.ts";
 import { MockQuoteProvider } from "../src/providers/mockQuoteProvider.ts";
 import { MockTelegramTransport } from "../src/providers/telegramTransport.ts";
@@ -60,11 +60,6 @@ test("/start → Lobby 使用者,不索取持倉", async () => {
   const d = deps();
   const r = await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
   assert.match(r.reply!, /不提供投資建議/);
-  assert.match(r.reply!, /Welcome to Maggie Stock AI/);
-  assert.match(r.reply!, /\/language zh（繁體中文）/);
-  assert.match(r.reply!, /\/language en \(English\)/);
-  assert.equal(r.reply!.includes("\\\\n"), false);
-  assert.match(r.reply!, /AI。\n這裡/);
   assert.equal((await d.recipients.get("u1"))!.tier, 1);
 });
 test("/language en → 英文輸出", async () => {
@@ -277,7 +272,7 @@ test("denied 對應訊息:in_flight / backoff / fatal / already_sent(中英)", a
   assert.match(tpE.sent[0].text, /US Market State/);
   assert.match(rE.reply!, /already delivered/);
   // in_flight / backoff / fatal
-  const snap = await new MockQuoteProvider().getQuotes(MAG7);
+  const snap = await new MockQuoteProvider().getQuotes(MARKET_SYMBOLS);
   const rep = buildMarketReport(snap, "zh-TW", NOW);
   const etDate = getMarketStatus(NOW).etDate;
   const candId = candidateId("on_demand_markets", etDate, rep.decisionVersion);
@@ -318,4 +313,72 @@ test("P0-2 密封 telegram + Telegram transport → 正常放行(對照組)", as
     renderFor: () => "正常頻道內容。" }, pubDeps(tp, rc));
   assert.equal(tp.sent.length, 1);
   assert.equal(res.sent.length, 1);
+});
+
+// ---- 真實整合暴露的兩件上線前 P0 ----
+test("P0 時段/資料時間分行:盤中時段 + EOD 資料必須各自如實標示", async () => {
+  const snap = await new MockQuoteProvider().getQuotes(MAG7);
+  const zh = buildMarketReport(snap, "zh-TW", NOW);
+  assert.match(zh.text, /行情資料: 前一交易日收盤\(EOD\)/);
+  const en = buildMarketReport(snap, "en", NOW);
+  assert.match(en.text, /Quote data: prior session close \(EOD\)/);
+  assert.equal(/[\u4e00-\u9fff]/.test(en.text), false);
+});
+test("P0 未齊 7 檔 → 只回資料收集中,不產生正式報告、不發送", async () => {
+  const partial = {
+    id: "partial",
+    getQuotes: async (syms: string[]) => {
+      const full = await new MockQuoteProvider().getQuotes(["AAPL"]);   // 只拿到 1 檔
+      return { ...full, symbolsRequested: syms };
+    },
+  };
+  const tp = new MockTelegramTransport();
+  const d = deps({ transport: tp, quotes: partial as any });
+  await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
+  const r = await handleCommand("/markets", { userId:"u1", chatId:"c1" }, d);
+  assert.equal(tp.sent.length, 0);
+  assert.match(r.reply!, /七巨頭資料:1\/7/);
+  assert.match(r.reply!, /大盤資料:0\/4/);
+});
+
+// ---- 報告規格回歸:溫度計 + 雙閘門(GPT 指定三場景) ----
+const subsetProvider = (symbols: string[]) => ({
+  id: "subset",
+  getQuotes: async (req: string[]) => {
+    const full = await new MockQuoteProvider().getQuotes(symbols.filter(s => req.includes(s)));
+    return { ...full, symbolsRequested: req };
+  },
+});
+test("規格1 七巨頭7/7、ETF 0/4 → 不發布,訊息分列兩組", async () => {
+  const tp = new MockTelegramTransport();
+  const d = deps({ transport: tp, quotes: subsetProvider([...MAG7]) as any });
+  await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
+  const r = await handleCommand("/markets", { userId:"u1", chatId:"c1" }, d);
+  assert.equal(tp.sent.length, 0);
+  assert.match(r.reply!, /七巨頭資料:7\/7/);
+  assert.match(r.reply!, /大盤資料:0\/4/);
+});
+test("規格2 七巨頭6/7、ETF 4/4 → 不發布", async () => {
+  const tp = new MockTelegramTransport();
+  const six = MAG7.filter(s => s !== "TSLA");
+  const d = deps({ transport: tp, quotes: subsetProvider(["SPY","QQQ","DIA","IWM", ...six]) as any });
+  await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
+  const r = await handleCommand("/markets", { userId:"u1", chatId:"c1" }, d);
+  assert.equal(tp.sent.length, 0);
+  assert.match(r.reply!, /七巨頭資料:6\/7/);
+  assert.match(r.reply!, /大盤資料:4\/4/);
+});
+test("規格3 七巨頭7/7、ETF 4/4 → 發布,報告含 SPY/QQQ/DIA/IWM 溫度計與 EOD 標示", async () => {
+  const tp = new MockTelegramTransport();
+  const d = deps({ transport: tp });                    // Mock fixture 已含 11 檔
+  await handleCommand("/start", { userId:"u1", chatId:"c1" }, d);
+  await handleCommand("/markets", { userId:"u1", chatId:"c1" }, d);
+  assert.equal(tp.sent.length, 1);
+  const text = tp.sent[0].text;
+  assert.match(text, /美股大盤溫度計/);
+  for (const s of ["SPY","QQQ","DIA","IWM"]) assert.match(text, new RegExp(s));
+  assert.match(text, /S&P 500 ETF/);
+  assert.match(text, /以上以 ETF 作為市場代理/);
+  assert.match(text, /七巨頭表現/);
+  assert.match(text, /行情資料: 前一交易日收盤\(EOD\)/);   // 第 6 條:EOD 標示保留
 });

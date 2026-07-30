@@ -24,6 +24,8 @@ export interface ProviderSnapshot<T> {
   licenseContext: string;   // "supplier/dataset" — 授權推導的唯一依據
   /** Ingestion 存證 ID(由 gateway 計算寫入);無 writer 時為 null,無法密封發布 */
   provenanceId: string | null;
+  /** 彙整視圖(如快取)由多個批次組成時,列出全部貢獻批次的存證 ID */
+  provenanceIds?: string[];
   data: T | null;
   notes?: string[];
 }

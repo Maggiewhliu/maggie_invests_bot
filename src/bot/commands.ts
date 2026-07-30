@@ -8,7 +8,7 @@ import type { QuoteProvider } from "../providers/types.ts";
 import type { TelegramTransport } from "../providers/telegramTransport.ts";
 import type { PushStore } from "../pushCore.ts";
 import { LicenseRegistry } from "../licenseRegistry.ts";
-import { buildMarketReport, type Lang } from "../reports/marketReport.ts";
+import { buildMarketReport, MARKET_ETFS, type Lang } from "../reports/marketReport.ts";
 import { publish } from "../pipeline/publish.ts";
 import { TIER_NAME, canAccess } from "../tierAccess.ts";
 import { getMarketStatus } from "../marketClock.ts";
@@ -16,9 +16,8 @@ import { assertPublishable } from "../contentRiskGuard.ts";
 import { sealDecisionArtifact, type ProvenanceReader } from "../pipeline/artifactSeal.ts";
 
 export const MAG7 = ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA"];
-/** 大盤以流動性高的 ETF 作為市場代理，避免把指數授權與 ETF 報價混為一談。 */
-export const MARKET_BENCHMARKS = ["SPY","QQQ","DIA","IWM"];
-export const MARKET_SYMBOLS = [...MARKET_BENCHMARKS, ...MAG7];
+/** 報告規格定案:大盤溫度計 4 檔 + 七巨頭 7 檔 = 11 檔 */
+export const MARKET_SYMBOLS = [...MARKET_ETFS, ...MAG7];
 
 const UI = {
   "zh-TW": {
@@ -29,6 +28,8 @@ const UI = {
     help: "可用指令\n/markets 美股市場狀態\n/account 我的層級\n/membership 會員說明\n/language 切換語言\n/help 說明",
     denied: (r: string) => `此功能目前不可用(${r})。`,
     noData: "市場資料目前不可用,不以估計值替代。",
+    collecting: (m7: number, etf: number) =>
+      `市場資料收集中。七巨頭資料:${m7}/7|大盤資料:${etf}/4。完整報告將於資料齊備後提供;不以殘缺資料產生正式報告。`,
     alreadySent: "本節點報告已送出且內容未有變化;下次市場狀態更新時會再通知。",
     processing: "報告正在處理中,請稍候再試。",
     tempUnavailable: "此報告暫時無法提供,已記入管理佇列;修復後會於下一節點恢復。",
@@ -41,6 +42,8 @@ const UI = {
     help: "Commands\n/markets US market state\n/account my tier\n/membership tiers\n/language switch language\n/help this message",
     denied: (r: string) => `This feature is unavailable (${r}).`,
     noData: "Market data is unavailable; no estimated values are substituted.",
+    collecting: (m7: number, etf: number) =>
+      `Collecting market data. Magnificent 7: ${m7}/7 | Market ETFs: ${etf}/4. The full report will be issued once data is complete; partial data never becomes an official report.`,
     alreadySent: "This report was already delivered and its content has not changed; you will be notified on the next state update.",
     processing: "Your report is being processed; please try again shortly.",
     tempUnavailable: "This report is temporarily unavailable and has been queued for admin review; it will resume at the next node.",
@@ -109,22 +112,23 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         "basic_indicators", env);
       if (!acc.allowed) return { reply: t.denied(acc.reason) };
       const snap = await deps.quotes.getQuotes(MARKET_SYMBOLS);
-      if (!snap.data || snap.quality === "invalid") {
-        console.warn("[market-data] unavailable", {
-          provider: snap.provider,
-          quality: snap.quality,
-          notes: snap.notes ?? [],
-        });
-        return { reply: t.noData };
-      }
+      if (!snap.data || snap.quality === "invalid") return { reply: t.noData };
+      // 正式 Certified 報告最低完整條件:七巨頭 7/7 且 大盤 ETF 4/4,缺任一組不發布
+      const got = new Set(snap.data.map(q => q.symbol));
+      const m7 = MAG7.filter(s => got.has(s)).length;
+      const etf = MARKET_ETFS.filter(s => got.has(s)).length;
+      if (m7 < MAG7.length || etf < MARKET_ETFS.length)
+        return { reply: t.collecting(m7, etf) };
       const repZh = buildMarketReport(snap, "zh-TW", now);
       const repEn = buildMarketReport(snap, "en", now);
       const rep = user.lang === "en" ? repEn : repZh;
       const st = getMarketStatus(now);
       const secret = env["ARTIFACT_HMAC_SECRET"] ?? "";
-      // P0-1:存證已在 provider adapter 的 ingestion gateway 完成;此處只讀
-      if (!snap.provenanceId) return { reply: t.denied("no_provenance") };
-      const provIds = [snap.provenanceId];
+      // 存證已在 provider adapter 的 ingestion gateway 完成;此處只讀。
+      // 快取彙整視圖由多個批次組成 → 全部批次的存證一併入簽。
+      const provIds = snap.provenanceIds?.length ? snap.provenanceIds
+        : snap.provenanceId ? [snap.provenanceId] : [];
+      if (!provIds.length) return { reply: t.denied("no_provenance") };
       const artifact = sealDecisionArtifact({
         decisionVersion: rep.decisionVersion, dataQuality: rep.dataQuality,
         provenanceIds: provIds,

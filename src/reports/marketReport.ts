@@ -10,46 +10,52 @@ import { DISCLAIMER } from "../contentRiskGuard.ts";
 
 export type Lang = "zh-TW" | "en";
 
+/** 大盤溫度計 ETF(報告規格定案;commands 由此組出完整抓取清單) */
+export const MARKET_ETFS = ["SPY", "QQQ", "DIA", "IWM"] as const;
+const ETF_SET = new Set<string>(MARKET_ETFS);
+const ETF_LABEL: Record<string, { "zh-TW": string; en: string }> = {
+  SPY: { "zh-TW": "S&P 500 ETF", en: "S&P 500 ETF" },
+  QQQ: { "zh-TW": "Nasdaq-100 ETF", en: "Nasdaq-100 ETF" },
+  DIA: { "zh-TW": "道瓊工業 ETF", en: "Dow Jones ETF" },
+  IWM: { "zh-TW": "美國小型股 ETF", en: "US small-cap ETF" },
+};
+
 export interface MarketReport {
   text: string; contentHash: string; decisionVersion: string;
   dataQuality: "real" | "incomplete" | "stale" | "invalid"; asOf: string;
 }
 
-const BENCHMARK_LABEL: Record<string, { "zh-TW": string; en: string }> = {
-  SPY: { "zh-TW": "S&P 500 ETF", en: "S&P 500 ETF" },
-  QQQ: { "zh-TW": "Nasdaq-100 ETF", en: "Nasdaq-100 ETF" },
-  DIA: { "zh-TW": "道瓊工業 ETF", en: "Dow Industrials ETF" },
-  IWM: { "zh-TW": "美國小型股 ETF", en: "US Small Caps ETF" },
-};
-const BENCHMARKS = new Set(Object.keys(BENCHMARK_LABEL));
-
 const T = {
   "zh-TW": {
     title: "美股市場狀態", session: { premarket:"延長時段(盤前)", regular:"盤中",
       afterhours:"延長時段(盤後)", closed:"休市", unknown:"日曆未涵蓋" },
-    holiday:"休市", halfDay:"(半日)", marketGauge:"美股大盤溫度計",
-    proxyNote:"以下以 ETF 作為市場代理", ranking:"七巨頭表現", weak:"相對弱勢",
+    holiday:"休市", halfDay:"(半日)", ranking:"七巨頭表現", weak:"相對弱勢",
     tech:"技術面觀察", rsiHigh:"RSI 偏高", rsiLow:"RSI 偏低", volSpike:"成交量放大",
     watch:"接下來觀察什麼", invalid:"什麼情況代表判讀失效",
     w1:"量能是否連續,而非單日異常。", w2:"是否有事件改變原有觀察前提。",
     i1:"價格結構回到原區間,或出現足以改變前提的新資訊。",
     unavailable:"⚠️ 行情資料目前不可用,本節不顯示數值。",
+    thermo:"美股大盤溫度計", proxy:"以上以 ETF 作為市場代理",
     missing:"⚠️ 本次缺少", nochange:"—", dataRange:"資料時間", staleLabel:"⚠️ 資料過期",
+    dataTiming:"行情資料", timing:{ realtime:"即時", delayed:"延遲行情",
+      eod:"前一交易日收盤(EOD)", filing:"官方申報資料" },
     sessionNote:"盤前/盤後為美股延長交易時段之泛稱;核心交易時段 09:30–16:00 ET 為三大交易所一致。",
     footer:"資料截至", note:DISCLAIMER["zh-TW"],
   },
   en: {
     title: "US Market State", session: { premarket:"Extended hours (pre-market)", regular:"Regular session",
       afterhours:"Extended hours (post-market)", closed:"Closed", unknown:"Calendar not covered" },
-    holiday:"Market holiday", halfDay:"(half day)", marketGauge:"US Market Gauge",
-    proxyNote:"Market proxies shown via ETFs", ranking:"Magnificent 7", weak:"Relative laggards",
+    holiday:"Market holiday", halfDay:"(half day)", ranking:"Magnificent 7", weak:"Relative laggards",
     tech:"Technical observations", rsiHigh:"RSI elevated", rsiLow:"RSI depressed", volSpike:"Volume expansion",
     watch:"What to watch next", invalid:"What would invalidate this",
     w1:"Whether volume holds across sessions rather than spiking once.",
     w2:"Whether any event changes the premise of this observation.",
     i1:"Price reclaiming its prior range, or new information that changes the premise.",
     unavailable:"⚠️ Quote data unavailable; this section shows no values.",
+    thermo:"US market thermometer", proxy:"ETFs above serve as market proxies",
     missing:"⚠️ Missing this run", nochange:"—", dataRange:"Data span", staleLabel:"⚠️ Stale data",
+    dataTiming:"Quote data", timing:{ realtime:"real-time", delayed:"delayed",
+      eod:"prior session close (EOD)", filing:"official filings" },
     sessionNote:"Pre-/post-market refers to consolidated US extended trading hours; the core session 09:30\u201316:00 ET is identical across the three exchanges.",
     footer:"Data as of", note:DISCLAIMER.en,
   },
@@ -64,47 +70,43 @@ export function buildMarketReport(snap: ProviderSnapshot<Quote[]>, lang: Lang,
   lines.push(`📊 ${t.title} — ${sessionLabel}${st.isHalfDay ? " " + t.halfDay : ""}`);
   if (st.holidayName) lines.push(`   ${t.holiday}: ${st.holidayName}`);
   lines.push(`   NYSE · Nasdaq · NYSE American | ${st.etDate} ${st.etTime} ET`);
+  // P0(真實整合暴露):市場「時段」與行情「資料時間」必須分行如實標示,
+  // 否則「盤中」+ EOD 價格會被誤讀為即時報價。
+  lines.push(`   ${t.dataTiming}: ${t.timing[snap.delayClass]}`);
   lines.push("");
 
   if (!snap.data || snap.quality === "invalid") {
     lines.push(t.unavailable);
   } else {
-    const allRows = [...snap.data];
-    const benchmarkRows = allRows.filter(q => BENCHMARKS.has(q.symbol));
-    const rows = allRows.filter(q => !BENCHMARKS.has(q.symbol))
+    const all = [...snap.data];
+    const fmtRow = (q: typeof all[number], extra = "") => {
+      const pct = q.changePct;
+      const arrow = pct == null ? "·" : pct >= 0 ? "▲" : "▼";
+      const pctStr = pct == null ? t.nochange : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+      return `  ${arrow} ${q.symbol.padEnd(6)} ${q.last.toFixed(2).padStart(8)}  ${pctStr}${extra}`;
+    };
+    // 大盤溫度計(ETF 區段;規格定案順序 SPY/QQQ/DIA/IWM)
+    const etfs = MARKET_ETFS.map(s => all.find(q => q.symbol === s)).filter(Boolean) as typeof all;
+    if (etfs.length) {
+      lines.push(t.thermo);
+      for (const q of etfs) lines.push(fmtRow(q, `  ${ETF_LABEL[q.symbol]?.[lang] ?? ""}`));
+      lines.push(`  ${t.proxy}`);
+      lines.push("");
+    }
+    const rows = all.filter(q => !ETF_SET.has(q.symbol))
       .sort((a,b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity));
-
-    lines.push(`${t.marketGauge}`);
-    for (const symbol of ["SPY", "QQQ", "DIA", "IWM"]) {
-      const q = benchmarkRows.find(row => row.symbol === symbol);
-      if (!q) {
-        lines.push(`  · ${symbol.padEnd(4)} ${t.nochange}`);
-        continue;
-      }
-      const pct = q.changePct;
-      const arrow = pct == null ? "·" : pct >= 0 ? "▲" : "▼";
-      const pctStr = pct == null ? t.nochange : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
-      lines.push(`  ${arrow} ${symbol.padEnd(4)} ${q.last.toFixed(2).padStart(8)}  ${pctStr}  ${BENCHMARK_LABEL[symbol][lang]}`);
-    }
-    lines.push(`  ${t.proxyNote}`, "");
-
     lines.push(`${t.ranking}`);
-    for (const q of rows) {
-      const pct = q.changePct;
-      const arrow = pct == null ? "·" : pct >= 0 ? "▲" : "▼";
-      const pctStr = pct == null ? t.nochange : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
-      lines.push(`  ${arrow} ${q.symbol.padEnd(6)} ${q.last.toFixed(2).padStart(8)}  ${pctStr}`);
-    }
+    for (const q of rows) lines.push(fmtRow(q));
     // Fix2:資料時間範圍與過期 symbols
-    const dates = [...new Set(allRows.map(q => q.asOf.slice(0, 10)))].sort();
+    const dates = [...new Set(rows.map(q => q.asOf.slice(0, 10)))].sort();
     if (dates.length > 1) lines.push("", `${t.dataRange}: ${dates[0]} ~ ${dates[dates.length - 1]}`);
     if (snap.expectedSessionDate) {
-      const stale = allRows.filter(q => q.asOf.slice(0, 10) < snap.expectedSessionDate!).map(q => q.symbol);
+      const stale = rows.filter(q => q.asOf.slice(0, 10) < snap.expectedSessionDate!).map(q => q.symbol);
       if (stale.length) lines.push("", `${t.staleLabel}: ${stale.join(", ")} (< ${snap.expectedSessionDate})`);
     }
     // P1:incomplete 時明列缺少的 symbols
     if (snap.symbolsRequested) {
-      const got = new Set(allRows.map(r => r.symbol));
+      const got = new Set(rows.map(r => r.symbol));
       const miss = snap.symbolsRequested.filter(s => !got.has(s));
       if (miss.length) { lines.push(""); lines.push(`${t.missing}: ${miss.join(", ")}`); }
     }
