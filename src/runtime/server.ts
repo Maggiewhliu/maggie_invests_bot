@@ -24,7 +24,7 @@ async function ensureTelegramWebhook(): Promise<void> {
   const token = env["TELEGRAM_BOT_TOKEN"]?.trim();
   if (!base || !secret || !token) {
     telegramWebhookStatus = "skipped";
-    telegramWebhookError = "PUBLIC_BASE_URL or TELEGRAM_WEBHOOK_SECRET missing";
+    telegramWebhookError = "public domain or TELEGRAM_WEBHOOK_SECRET missing";
     console.warn(`[telegram-webhook] skipped: ${telegramWebhookError}`);
     return;
   }
