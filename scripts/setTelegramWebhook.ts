@@ -7,7 +7,7 @@ const required = (name: string): string => {
 const token = required("TELEGRAM_BOT_TOKEN");
 const secret = required("TELEGRAM_WEBHOOK_SECRET");
 const base = required("PUBLIC_BASE_URL").replace(/\/+$/, "");
-const url = `${base}/telegram/webhook`;
+const url = `${base}/webhook`;
 
 const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
   method: "POST",
