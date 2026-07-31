@@ -16,12 +16,16 @@ for (const k of ["TELEGRAM_BOT_TOKEN", "ARTIFACT_HMAC_SECRET", "MASSIVE_API_KEY"
 const { deps, cache, botEnv } = buildRuntime(env);
 
 /** Railway 啟動時自動設定 Telegram webhook；不再依賴使用者本機終端機變數。 */
+let telegramWebhookStatus: "pending" | "configured" | "skipped" | "error" = "pending";
+let telegramWebhookError: string | null = null;
 async function ensureTelegramWebhook(): Promise<void> {
   const base = env["PUBLIC_BASE_URL"]?.trim().replace(/\\\/+$/, "");
   const secret = env["TELEGRAM_WEBHOOK_SECRET"]?.trim();
   const token = env["TELEGRAM_BOT_TOKEN"]?.trim();
   if (!base || !secret || !token) {
-    console.warn("[telegram-webhook] skipped: PUBLIC_BASE_URL or TELEGRAM_WEBHOOK_SECRET missing");
+    telegramWebhookStatus = "skipped";
+    telegramWebhookError = "PUBLIC_BASE_URL or TELEGRAM_WEBHOOK_SECRET missing";
+    console.warn(`[telegram-webhook] skipped: ${telegramWebhookError}`);
     return;
   }
   const url = `${base}/webhook`;
@@ -34,10 +38,15 @@ async function ensureTelegramWebhook(): Promise<void> {
   const body = await response.json() as { ok?: boolean; description?: string };
   if (!response.ok || !body.ok)
     throw new Error(`setWebhook failed: ${body.description ?? response.status}`);
+  telegramWebhookStatus = "configured";
+  telegramWebhookError = null;
   console.log(`[telegram-webhook] configured: ${url}`);
 }
-void ensureTelegramWebhook().catch(e =>
-  console.error("[telegram-webhook]", String(e).slice(0, 200)));
+void ensureTelegramWebhook().catch(e => {
+  telegramWebhookStatus = "error";
+  telegramWebhookError = String(e).slice(0, 160);
+  console.error("[telegram-webhook]", telegramWebhookError);
+});
 startQuoteCacheLoop(cache, 65_000);            // 65s:貼不到 60s 限流視窗
 
 const server = createServer(async (req, res) => {
@@ -47,7 +56,8 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, env: botEnv, quality: snap.quality,
         cached: snap.data?.length ?? 0, want: MARKET_SYMBOLS.length,
-        asOf: snap.asOf, notes: snap.notes }));
+        asOf: snap.asOf, notes: snap.notes,
+        telegramWebhook: { status: telegramWebhookStatus, error: telegramWebhookError } }));
       return;
     }
     if (req.method === "POST" && req.url === "/webhook") {
