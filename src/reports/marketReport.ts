@@ -54,7 +54,7 @@ const T = {
     w2:"Whether any event changes the premise of this observation.",
     i1:"Price reclaiming its prior range, or new information that changes the premise.",
     unavailable:"⚠️ Quote data unavailable; this section shows no values.",
-    thermo:"US market thermometer", proxy:"ETFs above serve as market proxies",
+    thermo:"US Market Gauge", proxy:"Market proxies shown via ETFs",
     overall:"Magnificent 7 overview", avg:"Average change", strongest:"Strongest", weakest:"Weakest",
     breadth:"Advancers/Decliners",
     missing:"⚠️ Missing this run", nochange:"—", dataRange:"Data span", staleLabel:"⚠️ Stale data",
