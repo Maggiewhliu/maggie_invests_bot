@@ -378,7 +378,7 @@ test("規格3 七巨頭7/7、ETF 4/4 → 發布,報告含 SPY/QQQ/DIA/IWM 溫度
   assert.match(text, /美股大盤溫度計/);
   for (const s of ["SPY","QQQ","DIA","IWM"]) assert.match(text, new RegExp(s));
   assert.match(text, /S&P 500 ETF/);
-  assert.match(text, /以上以 ETF 作為市場代理/);
+  assert.match(text, /以下以 ETF 作為市場代理/);
   assert.match(text, /七巨頭表現/);
   assert.match(text, /行情資料: 前一交易日收盤\(EOD\)/);   // 第 6 條:EOD 標示保留
 });
