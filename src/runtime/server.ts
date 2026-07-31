@@ -14,6 +14,30 @@ for (const k of ["TELEGRAM_BOT_TOKEN", "ARTIFACT_HMAC_SECRET", "MASSIVE_API_KEY"
   if (!env[k]) { console.error(`missing env: ${k}`); process.exit(1); }
 }
 const { deps, cache, botEnv } = buildRuntime(env);
+
+/** Railway 啟動時自動設定 Telegram webhook；不再依賴使用者本機終端機變數。 */
+async function ensureTelegramWebhook(): Promise<void> {
+  const base = env["PUBLIC_BASE_URL"]?.trim().replace(/\\\/+$/, "");
+  const secret = env["TELEGRAM_WEBHOOK_SECRET"]?.trim();
+  const token = env["TELEGRAM_BOT_TOKEN"]?.trim();
+  if (!base || !secret || !token) {
+    console.warn("[telegram-webhook] skipped: PUBLIC_BASE_URL or TELEGRAM_WEBHOOK_SECRET missing");
+    return;
+  }
+  const url = `${base}/webhook`;
+  const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, secret_token: secret, allowed_updates: ["message"],
+      drop_pending_updates: false }),
+  });
+  const body = await response.json() as { ok?: boolean; description?: string };
+  if (!response.ok || !body.ok)
+    throw new Error(`setWebhook failed: ${body.description ?? response.status}`);
+  console.log(`[telegram-webhook] configured: ${url}`);
+}
+void ensureTelegramWebhook().catch(e =>
+  console.error("[telegram-webhook]", String(e).slice(0, 200)));
 startQuoteCacheLoop(cache, 65_000);            // 65s:貼不到 60s 限流視窗
 
 const server = createServer(async (req, res) => {
