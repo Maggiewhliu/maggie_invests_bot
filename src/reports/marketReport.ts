@@ -35,7 +35,7 @@ const T = {
     w1:"量能是否連續,而非單日異常。", w2:"是否有事件改變原有觀察前提。",
     i1:"價格結構回到原區間,或出現足以改變前提的新資訊。",
     unavailable:"⚠️ 行情資料目前不可用,本節不顯示數值。",
-    thermo:"美股大盤溫度計", proxy:"以上以 ETF 作為市場代理",
+    thermo:"美股大盤溫度計", proxy:"以下以 ETF 作為市場代理",
     overall:"七巨頭整體表現", avg:"平均漲跌", strongest:"最強", weakest:"最弱",
     breadth:"上漲/下跌家數",
     missing:"⚠️ 本次缺少", nochange:"—", dataRange:"資料時間", staleLabel:"⚠️ 資料過期",
