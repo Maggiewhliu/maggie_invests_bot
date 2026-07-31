@@ -1,0 +1,27 @@
+# 憑證與環境 — 絕不 commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# 資料 — 會員/持倉/資料庫內容不進版控
+*.sqlite
+*.db
+data/
+*.csv
+
+# 相依與建置
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 作業系統雜訊(避免 macOS metadata)
+.DS_Store
+._*
+__MACOSX/
+
+# 編輯器
+.vscode/
+.idea/
