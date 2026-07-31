@@ -18,6 +18,7 @@ const { deps, cache, botEnv } = buildRuntime(env);
 /** Railway 啟動時自動設定 Telegram webhook；不再依賴使用者本機終端機變數。 */
 let telegramWebhookStatus: "pending" | "configured" | "skipped" | "error" = "pending";
 let telegramWebhookError: string | null = null;
+let telegramWebhookHost: string | null = null;
 async function ensureTelegramWebhook(): Promise<void> {
   const base = env["PUBLIC_BASE_URL"]?.trim().replace(/\\\/+$/, "");
   const secret = env["TELEGRAM_WEBHOOK_SECRET"]?.trim();
@@ -29,6 +30,7 @@ async function ensureTelegramWebhook(): Promise<void> {
     return;
   }
   const url = `${base}/webhook`;
+  telegramWebhookHost = new URL(url).host;
   const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -57,7 +59,7 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, env: botEnv, quality: snap.quality,
         cached: snap.data?.length ?? 0, want: MARKET_SYMBOLS.length,
         asOf: snap.asOf, notes: snap.notes,
-        telegramWebhook: { status: telegramWebhookStatus, error: telegramWebhookError } }));
+        telegramWebhook: { status: telegramWebhookStatus, host: telegramWebhookHost, error: telegramWebhookError } }));
       return;
     }
     if (req.method === "POST" && req.url === "/webhook") {
