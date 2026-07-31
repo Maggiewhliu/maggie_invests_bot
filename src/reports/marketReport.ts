@@ -36,6 +36,8 @@ const T = {
     i1:"價格結構回到原區間,或出現足以改變前提的新資訊。",
     unavailable:"⚠️ 行情資料目前不可用,本節不顯示數值。",
     thermo:"美股大盤溫度計", proxy:"以上以 ETF 作為市場代理",
+    overall:"七巨頭整體表現", avg:"平均漲跌", strongest:"最強", weakest:"最弱",
+    breadth:"上漲/下跌家數",
     missing:"⚠️ 本次缺少", nochange:"—", dataRange:"資料時間", staleLabel:"⚠️ 資料過期",
     dataTiming:"行情資料", timing:{ realtime:"即時", delayed:"延遲行情",
       eod:"前一交易日收盤(EOD)", filing:"官方申報資料" },
@@ -53,6 +55,8 @@ const T = {
     i1:"Price reclaiming its prior range, or new information that changes the premise.",
     unavailable:"⚠️ Quote data unavailable; this section shows no values.",
     thermo:"US market thermometer", proxy:"ETFs above serve as market proxies",
+    overall:"Magnificent 7 overview", avg:"Average change", strongest:"Strongest", weakest:"Weakest",
+    breadth:"Advancers/Decliners",
     missing:"⚠️ Missing this run", nochange:"—", dataRange:"Data span", staleLabel:"⚠️ Stale data",
     dataTiming:"Quote data", timing:{ realtime:"real-time", delayed:"delayed",
       eod:"prior session close (EOD)", filing:"official filings" },
@@ -97,6 +101,18 @@ export function buildMarketReport(snap: ProviderSnapshot<Quote[]>, lang: Lang,
       .sort((a,b) => (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity));
     lines.push(`${t.ranking}`);
     for (const q of rows) lines.push(fmtRow(q));
+    // 整體統計(純事實;沿用社群熟悉的資訊密度,不含任何策略/磁吸措辭)
+    const withPct = rows.filter(q => q.changePct != null) as (typeof rows[number] & { changePct: number })[];
+    if (withPct.length >= 2) {
+      const avg = withPct.reduce((a, q) => a + q.changePct, 0) / withPct.length;
+      const up = withPct.filter(q => q.changePct > 0).length;
+      const down = withPct.filter(q => q.changePct < 0).length;
+      const hi = withPct[0], lo = withPct[withPct.length - 1];
+      lines.push("");
+      lines.push(t.overall);
+      lines.push(`  ${t.avg}: ${avg >= 0 ? "+" : ""}${avg.toFixed(2)}% | ${t.breadth}: ${up}/${down}`);
+      lines.push(`  ${t.strongest}: ${hi.symbol} (${hi.changePct >= 0 ? "+" : ""}${hi.changePct.toFixed(2)}%) | ${t.weakest}: ${lo.symbol} (${lo.changePct >= 0 ? "+" : ""}${lo.changePct.toFixed(2)}%)`);
+    }
     // Fix2:資料時間範圍與過期 symbols
     const dates = [...new Set(rows.map(q => q.asOf.slice(0, 10)))].sort();
     if (dates.length > 1) lines.push("", `${t.dataRange}: ${dates[0]} ~ ${dates[dates.length - 1]}`);

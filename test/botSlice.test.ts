@@ -69,13 +69,6 @@ test("/language en → 英文輸出", async () => {
   const r = await handleCommand("/account", { userId:"u1", chatId:"c1" }, d);
   assert.match(r.reply!, /Tier/);
 });
-
-test("Memory 使用者遺失時 /language 可自動重建，不會退回歡迎頁", async () => {
-  const d = deps();
-  const r = await handleCommand("/language zh", { userId:"fresh", chatId:"fresh" }, d);
-  assert.equal(r.reply, "語言已設定為繁體中文。");
-  assert.equal((await d.recipients.get("fresh"))?.lang, "zh-TW");
-});
 test("/markets 完整管線 → transport 收到報告", async () => {
   const tp = new MockTelegramTransport();
   const d = deps({ transport: tp });

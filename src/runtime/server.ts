@@ -1,81 +1,45 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+/**
+ * src/runtime/server.ts — Railway 進入點(薄殼)
+ * 環境變數:TELEGRAM_BOT_TOKEN / TELEGRAM_WEBHOOK_SECRET / MASSIVE_API_KEY /
+ *          ARTIFACT_HMAC_SECRET / DEV_LICENSE_MASSIVE / F_BASIC_TA / DATA_DERIVED_DISPLAY_OK / PORT
+ * 路由:POST /webhook(驗 X-Telegram-Bot-Api-Secret-Token)· GET /health(快取狀態)
+ */
+import { createServer } from "node:http";
+import { buildRuntime, handleTelegramUpdate } from "./runtime.ts";
 import { startQuoteCacheLoop } from "../pipeline/quoteCache.ts";
 import { MARKET_SYMBOLS } from "../bot/commands.ts";
-import { buildRuntime, handleTelegramUpdate } from "./runtime.ts";
 
-const required = (name: string, minLength = 1): string => {
-  const value = process.env[name]?.trim() ?? "";
-  if (value.length < minLength) throw new Error(`${name} missing or too short`);
-  return value;
-};
+const env = process.env;
+for (const k of ["TELEGRAM_BOT_TOKEN", "ARTIFACT_HMAC_SECRET", "MASSIVE_API_KEY"]) {
+  if (!env[k]) { console.error(`missing env: ${k}`); process.exit(1); }
+}
+const { deps, cache, botEnv } = buildRuntime(env);
+startQuoteCacheLoop(cache, 65_000);            // 65s:貼不到 60s 限流視窗
 
-const token = required("TELEGRAM_BOT_TOKEN", 20);
-const webhookSecret = required("TELEGRAM_WEBHOOK_SECRET", 24);
-const artifactSecret = required("ARTIFACT_HMAC_SECRET", 32);
-const massiveKey = required("MASSIVE_API_KEY", 8);
-const port = Number(process.env.PORT ?? "3000");
-
-const { deps: bot, cache: quotes } = buildRuntime({
-  ...process.env, TELEGRAM_BOT_TOKEN: token,
-  MASSIVE_API_KEY: massiveKey, ARTIFACT_HMAC_SECRET: artifactSecret,
-});
-startQuoteCacheLoop(quotes, 65_000);
-const allowedUserIds = new Set((process.env.TELEGRAM_ALLOWED_USER_IDS ?? "")
-  .split(",").map(s => s.trim()).filter(Boolean));
-
-const json = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(body));
-};
-const sameSecret = (provided: string): boolean => {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(webhookSecret);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-const readJson = async (req: IncomingMessage): Promise<unknown> => {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buf.length;
-    if (size > 1_000_000) throw new Error("payload too large");
-    chunks.push(buf);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-};
-
-export const server = createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
-    const snap = await quotes.getQuotes(MARKET_SYMBOLS);
-    json(res, 200, {
-      ok: true, service: "maggie-invests-bot", mode: "personal-preview",
-      quality: snap.quality, cached: snap.data?.length ?? 0,
-      want: MARKET_SYMBOLS.length, asOf: snap.asOf, notes: snap.notes,
-    });
-    return;
-  }
-  if (req.method !== "POST" || req.url !== "/telegram/webhook") {
-    json(res, 404, { ok: false });
-    return;
-  }
-  const supplied = String(req.headers["x-telegram-bot-api-secret-token"] ?? "");
-  if (!sameSecret(supplied)) {
-    json(res, 401, { ok: false });
-    return;
-  }
+const server = createServer(async (req, res) => {
   try {
-    const update = await readJson(req) as any;
-    const userId = String(update?.message?.from?.id ?? "");
-    if (allowedUserIds.size === 0 || allowedUserIds.has(userId))
-      await handleTelegramUpdate(update, bot);
-    json(res, 200, { ok: true });
-  } catch (error) {
-    console.error("telegram update failed", error);
-    json(res, 200, { ok: true });
-  }
+    if (req.method === "GET" && req.url === "/health") {
+      const snap = await cache.getQuotes(MARKET_SYMBOLS);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, env: botEnv, quality: snap.quality,
+        cached: snap.data?.length ?? 0, want: MARKET_SYMBOLS.length,
+        asOf: snap.asOf, notes: snap.notes }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/webhook") {
+      const expect = env["TELEGRAM_WEBHOOK_SECRET"];
+      if (expect && req.headers["x-telegram-bot-api-secret-token"] !== expect) {
+        res.writeHead(403); res.end(); return;
+      }
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      res.writeHead(200); res.end("ok");        // 先回 200,處理不阻塞 Telegram 重送
+      handleTelegramUpdate(JSON.parse(body), deps).catch(e =>
+        console.error("[update]", String(e).slice(0, 200)));
+      return;
+    }
+    res.writeHead(404); res.end();
+  } catch (e) { console.error("[server]", String(e).slice(0, 200)); res.writeHead(500); res.end(); }
 });
-
-server.listen(port, () => {
-  console.log(`maggie-invests-bot preview listening on :${port}; quote cache 65s`);
-});
+server.listen(Number(env["PORT"] ?? 8080), () =>
+  console.log(`maggie-stock-ai [${botEnv}] up :${env["PORT"] ?? 8080}; cache loop 65s, batches ${JSON.stringify(cache.batches().map(b => b.length))}`));

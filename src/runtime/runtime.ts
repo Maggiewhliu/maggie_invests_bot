@@ -7,7 +7,7 @@ import { ProvenanceLedger } from "../pipeline/artifactSeal.ts";
 import { MassiveQuoteProvider } from "../providers/massiveQuoteProvider.ts";
 import { QuoteCache } from "../pipeline/quoteCache.ts";
 import { LiveTelegramTransport, type TelegramTransport } from "../providers/telegramTransport.ts";
-import { MemoryRecipientProvider } from "../providers/recipientAdapter.ts";
+import { FileRecipientProvider } from "../providers/fileRecipientProvider.ts";
 import { MemoryPushStore } from "../pushCore.ts";
 import { LicenseRegistry, type LicenseGrant } from "../licenseRegistry.ts";
 import { handleCommand, MARKET_SYMBOLS, type BotDeps } from "../bot/commands.ts";
@@ -17,36 +17,48 @@ export interface RuntimeEnv { [k: string]: string | undefined; }
 export function buildRuntime(env: RuntimeEnv, overrides: { transport?: TelegramTransport } = {}) {
   const ledger = new ProvenanceLedger();
   const massiveKey = env["MASSIVE_API_KEY"] ?? "";
-  const upstream = new MassiveQuoteProvider(massiveKey, undefined, undefined,
+  const upstream = new MassiveQuoteProvider(massiveKey, undefined, "https://api.polygon.io",
     () => new Date(), ledger);
   const cache = new QuoteCache(upstream, MARKET_SYMBOLS, 5);
 
   const grants: LicenseGrant[] = [];
-  // 個人預覽只授權明確指定的 owner 作 internal_research。
-  if (env["PERSONAL_PREVIEW_ENABLED"] === "true") {
+  // 個人預覽:僅 internal_research 用途;Maggie 本人私訊可預覽,不等於對外 derived_display
+  const previewUserId = env["PERSONAL_PREVIEW_ENABLED"] === "true"
+    ? (env["PERSONAL_PREVIEW_USER_ID"] ?? null) : null;
+  if (previewUserId) {
     grants.push({ supplier: "massive", dataset: "equity_daily_close",
-      channels: ["telegram"], jurisdictions: ["TW"], uses: ["internal_research"],
-      validUntilIso: null, docRef: "PERSONAL-PREVIEW-OWNER-ONLY" });
+      channels: ["telegram"], jurisdictions: ["*"], uses: ["internal_research"],
+      validUntilIso: null, docRef: "PERSONAL-PREVIEW(internal_research;非對外散布)" });
   }
-  // 對外衍生顯示必須另有書面授權，不能由開發旗標冒充。
+  // 群組/對外 derived_display:唯有取得書面授權旗標才放行(預設 false)
   if (env["MASSIVE_TELEGRAM_DERIVED_DISPLAY_GRANTED"] === "true") {
     grants.push({ supplier: "massive", dataset: "equity_daily_close",
-      channels: ["telegram"], jurisdictions: ["TW"], uses: ["derived_display"],
-      validUntilIso: null, docRef: env["MASSIVE_LICENSE_DOC_REF"] ?? "" });
+      channels: ["telegram"], jurisdictions: ["*"], uses: ["derived_display"],
+      validUntilIso: null, docRef: env["MASSIVE_LICENSE_DOCREF"] ?? "MASSIVE-WRITTEN-LICENSE" });
   }
 
   const transport = overrides.transport
     ?? new LiveTelegramTransport(env["TELEGRAM_BOT_TOKEN"] ?? "");
+  // 雙環境:production(舊帳號新 token)/ staging(測試 Bot);純由環境變數區分
+  const botEnv = env["BOT_ENV"] ?? "staging";
+  // 預備社群收件人(GROUP_CHAT_ID):僅註冊為 Tier2 收件目標,四節點群發仍受發布管線全部閘門管制
+  const recipients = new FileRecipientProvider(env["USERS_FILE"] ?? `/tmp/maggie-users-${botEnv}.json`);
+  if (env["GROUP_CHAT_ID"]) {
+    void recipients.upsert({ userId: `group:${env["GROUP_CHAT_ID"]}`, chatId: env["GROUP_CHAT_ID"]!,
+      tier: 2, lang: (env["GROUP_LANG"] === "en" ? "en" : "zh-TW"),
+      jurisdiction: "TW", jurisdictionPaidAllowed: false });
+  }
   const deps: BotDeps = {
-    recipients: new MemoryRecipientProvider(),   // ⚠️ Memory:重啟即失;正式換 Postgres
+    recipients,   // 檔案版:同容器跨重啟存活;容器重建仍失。正式換 Postgres。
     quotes: cache,
     transport,
     store: new MemoryPushStore(),                // ⚠️ Memory:去重不跨重啟
     license: new LicenseRegistry(grants),
     provenanceReader: ledger.reader(),
+    previewUserId: previewUserId ?? undefined,
     env,
   };
-  return { deps, cache, ledger };
+  return { deps, cache, ledger, botEnv };
 }
 
 /** Telegram webhook update → 指令處理;純回覆(reply)也經 transport 送出 */

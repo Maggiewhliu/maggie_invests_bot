@@ -50,30 +50,12 @@ const UI = {
   },
 } as const;
 
-/** /start 固定提供繁中＋英文，讓新使用者不必先猜語言指令。 */
-export const BILINGUAL_WELCOME = [
-  "歡迎使用 Maggie Stock AI。",
-  "這裡提供美股市場資訊與投資教育，不提供投資建議、不代操、不報明牌。",
-  "請選擇語言：/language zh（繁體中文）或 /language en（English）",
-  "",
-  "Welcome to Maggie Stock AI.",
-  "US market information and investor education only — no investment advice, managed accounts, or stock tips.",
-  "Choose your language: /language zh (Traditional Chinese) or /language en (English)",
-].join("\n");
-
 export interface BotDeps {
   recipients: RecipientProvider; quotes: QuoteProvider; transport: TelegramTransport;
   store: PushStore; license: LicenseRegistry;
   provenanceReader: ProvenanceReader;   // 只讀;寫入權在 provider gateway,業務層拿不到
+  previewUserId?: string;               // 個人預覽白名單(僅此 user 走 internal_research)
   env?: Record<string, string | undefined>; now?: () => Date;
-}
-
-/** 個人預覽只對明確指定的 owner 生效；其他使用者仍走 derived-display 授權。 */
-export function marketLicenseUse(userId: string, env: Record<string, string | undefined>):
-  "internal_research" | "derived_display" {
-  return env["PERSONAL_PREVIEW_ENABLED"] === "true"
-    && env["PERSONAL_PREVIEW_USER_ID"] === userId
-    ? "internal_research" : "derived_display";
 }
 
 export async function handleCommand(raw: string, from: { userId: string; chatId: string },
@@ -90,11 +72,10 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         jurisdiction: "TW", jurisdictionPaidAllowed: false };
       await deps.recipients.upsert(user);
     }
-    return { reply: BILINGUAL_WELCOME };
+    return { reply: UI[user.lang].welcome };
   }
-  // Preview 使用 MemoryRecipientProvider，容器重啟會清空；任何有效指令都可
-  // 自動重建 Lobby 使用者，避免 /language、/markets 被困在歡迎頁。
   if (!user) {
+    // 自動補建(Memory 存儲重啟遺失 / 使用者未 /start):建 Lobby 後直接執行指令,不擋路
     user = { userId: from.userId, chatId: from.chatId, tier: 1, lang: "zh-TW",
       jurisdiction: "TW", jurisdictionPaidAllowed: false };
     await deps.recipients.upsert(user);
@@ -130,6 +111,10 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
       const rep = user.lang === "en" ? repEn : repZh;
       const st = getMarketStatus(now);
       const secret = env["ARTIFACT_HMAC_SECRET"] ?? "";
+      // 授權用途:個人預覽 = internal_research;其餘 = derived_display(群組需 GRANTED 旗標放行)
+      const isPreview = env["PERSONAL_PREVIEW_ENABLED"] === "true"
+        && deps.previewUserId != null && user.userId === deps.previewUserId;
+      const licenseUse = isPreview ? "internal_research" : "derived_display";
       // 存證已在 provider adapter 的 ingestion gateway 完成;此處只讀。
       // 快取彙整視圖由多個批次組成 → 全部批次的存證一併入簽。
       const provIds = snap.provenanceIds?.length ? snap.provenanceIds
@@ -142,7 +127,7 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
         primaryLang: user.lang,
         policy: { channel: "telegram", node: "on_demand_markets", etDate: st.etDate,
           candidateMode: "fixed", feature: "basic_indicators", minTier: 1,
-          licenseUse: marketLicenseUse(user.userId, env) },
+          licenseUse },
       }, deps.provenanceReader, secret);
       // 單人查詢也走完整管線(去重鍵含 recipient,不會與群發衝突)
       const res = await publish({
