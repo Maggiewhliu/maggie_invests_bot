@@ -58,6 +58,15 @@ export interface BotDeps {
   env?: Record<string, string | undefined>; now?: () => Date;
 }
 
+/** 單一真相：只有明確啟用且 user ID 符合的 owner 預覽可使用 internal_research。 */
+export function marketLicenseUse(userId: string,
+  env: Record<string, string | undefined>,
+  previewUserId?: string | null): "internal_research" | "derived_display" {
+  const ownerId = previewUserId ?? env["PERSONAL_PREVIEW_USER_ID"] ?? null;
+  return env["PERSONAL_PREVIEW_ENABLED"] === "true" && ownerId != null && userId === ownerId
+    ? "internal_research" : "derived_display";
+}
+
 export async function handleCommand(raw: string, from: { userId: string; chatId: string },
   deps: BotDeps): Promise<{ reply?: string; published?: unknown }> {
   const env = deps.env ?? process.env;
@@ -112,9 +121,7 @@ export async function handleCommand(raw: string, from: { userId: string; chatId:
       const st = getMarketStatus(now);
       const secret = env["ARTIFACT_HMAC_SECRET"] ?? "";
       // 授權用途:個人預覽 = internal_research;其餘 = derived_display(群組需 GRANTED 旗標放行)
-      const isPreview = env["PERSONAL_PREVIEW_ENABLED"] === "true"
-        && deps.previewUserId != null && user.userId === deps.previewUserId;
-      const licenseUse = isPreview ? "internal_research" : "derived_display";
+      const licenseUse = marketLicenseUse(user.userId, env, deps.previewUserId);
       // 存證已在 provider adapter 的 ingestion gateway 完成;此處只讀。
       // 快取彙整視圖由多個批次組成 → 全部批次的存證一併入簽。
       const provIds = snap.provenanceIds?.length ? snap.provenanceIds
